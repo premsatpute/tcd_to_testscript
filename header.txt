@@ -1,0 +1,24 @@
+*** Settings ***
+Library  Collections
+Library  Robo_FIT/GenericLibraries/GenericOpLibs/ControllerAreaNetwork/CanClass.py          single
+Library  Robo_FIT/GenericLibraries/GenericOpLibs/Reporting/UserXmlReporting.py
+Library  Robo_FIT/GenericLibraries/GenericOpLibs/TestArtifacts/CustomPrint.py
+Library  CRE/Libraries/ProjectLibs/CAN_UDS/UDS_Test.py
+Library  CRE/Libraries/Mahindra_libs/Mahindra_Identifiers_Variables.py
+Resource    CRE/Libraries/ProjectKeywords/Mahindra_Keywords/Set_Normal_Condition.robot
+Resource    CRE/Libraries/ProjectKeywords/Mahindra_Keywords/Common_Keywords.robot
+Library    CRE/Libraries/ProjectLibs/VAutoKit2/DIO/RelayCtrl.py
+Library    Robo_FIT.GenericLibraries.GenericOpLibs.Reporting.UserXmlReporting
+Suite Setup
+
+*** Variables ***
+#${QNX_Enabled}    False
+#${result}         True
+#${res}            True
+
+*** Keywords ***
+User Suite Setup
+    xml add suit name  ${SUITE_NAME}
+
+User Test Teardown
+    log  Execution is ended
