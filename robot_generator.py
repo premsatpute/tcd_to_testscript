@@ -1,12 +1,18 @@
 
-import os
+
+import streamlit as st
 import pandas as pd
-import re
+from io import BytesIO
+import zipfile
+import os
+import shutil
+from datetime import datetime
+import regex as re
 
 
 def load_and_preprocess_tcd(tcd_filepath):
     df = pd.read_excel(tcd_filepath)
-    df = df[["Labels", "Action", "Expected Results", "Description", "link issue Test"]].dropna()
+    df = df[["Labels", "Action", "Expected Results", "Description", "link issue Test"]]
     df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
     df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
     df["Normalized_Feature"] = df["Sub_Feature"].apply(lambda x: re.sub(r"[_\s]+", "_", x.strip().lower()) if isinstance(x, str) else "")
@@ -17,7 +23,15 @@ def load_and_preprocess_tcd(tcd_filepath):
 def extract_steps(row):
     action_steps = []
     expected_steps = {}
-    action_lines = row["Action"].split("\n")
+    action_lines = []
+    expected_results_str = ""
+
+    # Handle potential non-string in "Action"
+    if isinstance(row.get("Action", ""), float) and np.isnan(row.get("Action", "")):
+        action_lines = []
+    else:
+        action_lines = str(row.get("Action", "")).split("\n")
+
     extracting = False
     for line in action_lines:
         if "Steps:" in line:
@@ -26,7 +40,15 @@ def extract_steps(row):
         if extracting and line.strip():
             clean_line = re.sub(r"^\d+\.\s*", "", line.strip())
             action_steps.append(clean_line)
-    expected_lines = row["Expected Results"].split("\n")
+
+    # Handle potential non-string in "Expected Results"
+    expected_results = row.get("Expected Results", "")
+    if isinstance(expected_results, float) and np.isnan(expected_results):
+        expected_results_str = ""
+    else:
+        expected_results_str = str(expected_results)
+
+    expected_lines = expected_results_str.split("\n")
     for line in expected_lines:
         if line.strip() and re.match(r"^\d+\.", line):
             parts = line.split(".", 1)
@@ -36,6 +58,7 @@ def extract_steps(row):
                 expected_steps[step_num] = clean_value
             except ValueError:
                 continue
+
     final_steps = []
     used_expected = set()
     for i, action in enumerate(action_steps, start=1):
@@ -43,14 +66,16 @@ def extract_steps(row):
         if i in expected_steps:
             final_steps.append(expected_steps[i])
             used_expected.add(i)
+
     for key in sorted(expected_steps.keys()):
         if key not in used_expected:
             final_steps.append(expected_steps[key])
+
     return final_steps
 
+import numpy as np
 def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=None, output_dir="generated_test_scripts"):
-    import os
-    import re
+   
 
     keyword_map = {}
     if keyword_mapping_df is not None:
@@ -71,7 +96,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     # Get precondition test case (only one expected)
     precondition_row = df[df["Test_Case_Type"] == "precondition"]
     precondition = precondition_row.iloc[0] if not precondition_row.empty else None
-    precondition_steps = extract_steps(precondition) if precondition is not None else []
+    precondition_steps = extract_steps(precondition) if precondition is not None else [] 
     precondition_issues = precondition.get("link issue Test", "").strip() if precondition is not None else ""
     precondition_desc = re.sub(r"\s+", " ", precondition.get("Description", "Precondition").strip()) if precondition is not None else ""
 
