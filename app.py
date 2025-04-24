@@ -5,7 +5,6 @@ import zipfile
 import os
 import shutil
 from datetime import datetime
-
 from robot_generator import (
     load_and_preprocess_tcd,
     generate_separate_robot_files
@@ -236,12 +235,22 @@ if tcd_file and keyword_file and header_file:
         zip_buffer.seek(0)
         
         # Show preview of one of the scripts
-        sample_files = os.listdir(output_dir)
-        if sample_files:
-            st.markdown("### 🧪 Preview of One Generated Script")
-            sample_path = os.path.join(output_dir, sample_files[0])
-            with open(sample_path, "r", encoding="utf-8") as preview_file:
-                st.code(preview_file.read(), language="robotframework")
+        st.markdown("### 🧪 Preview of One Generated Script")
+        robot_files = []
+        for root, _, files in os.walk(output_dir):
+            for file in files:
+                if file.endswith(".robot"):
+                    robot_files.append(os.path.join(root, file))
+        
+        if robot_files:
+            try:
+                sample_path = robot_files[0]
+                with open(sample_path, "r", encoding="utf-8") as preview_file:
+                    st.code(preview_file.read(), language="robotframework")
+            except (PermissionError, FileNotFoundError) as e:
+                st.error(f"Failed to preview script: {str(e)}")
+        else:
+            st.warning("No .robot files found for preview.")
         
         # Download zip
         st.download_button(
