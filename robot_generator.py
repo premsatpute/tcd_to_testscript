@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import pandas as pd
 from io import BytesIO
@@ -8,7 +6,7 @@ import os
 import shutil
 from datetime import datetime
 import regex as re
-
+import numpy as np
 
 def load_and_preprocess_tcd(tcd_filepath):
     df = pd.read_excel(tcd_filepath)
@@ -73,10 +71,7 @@ def extract_steps(row):
 
     return final_steps
 
-import numpy as np
 def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=None, output_dir="generated_test_scripts"):
-   
-
     keyword_map = {}
     if keyword_mapping_df is not None:
         keyword_map = dict(zip(
@@ -107,8 +102,12 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
 
     for (feature_norm, category), group_df in grouped:
         feature_tag = group_df.iloc[0]["Sub_Feature"].strip().replace(" ", "_")
+        # Create a folder for the feature
+        feature_dir = os.path.join(output_dir, feature_norm)
+        os.makedirs(feature_dir, exist_ok=True)
+        # Save the robot file in the feature-specific folder
         full_filename = f"{feature_tag.upper()}_{category.upper()}.robot"
-        file_path = os.path.join(output_dir, full_filename)
+        file_path = os.path.join(feature_dir, full_filename)
 
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(header_content)
