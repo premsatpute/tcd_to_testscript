@@ -10,12 +10,39 @@ import numpy as np
 
 def load_and_preprocess_tcd(tcd_filepath):
     df = pd.read_excel(tcd_filepath)
-    df = df[["Labels", "Action", "Expected Results", "Description", "link issue Test"]]
+    
+    # Keep only the required columns
+    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test"]
+    df = df[required_columns]
+    
+    # Filter out completely empty rows
+    df = df.dropna(how='all')
+    
+    # Filter out rows where only 'Labels' has a value, but other required columns are empty
+    df = df.dropna(subset=['Action', 'Expected Results', 'Description'], how='all')
+    
+    # Reset index after filtering
+    df = df.reset_index(drop=True)
+    
+    # Apply preprocessing to valid rows
     df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
     df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
-    df["Normalized_Feature"] = df["Sub_Feature"].apply(lambda x: re.sub(r"[_\s]+", "_", x.strip().lower()) if isinstance(x, str) else "")
-    df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;]+", "_", regex=True).str.strip("_")
+    
+    # Sanitize Normalized_Feature to remove invalid characters for Windows file/directory names
+    def sanitize_filename(name):
+        if not isinstance(name, str):
+            return ""
+        # Replace invalid characters with underscores
+        invalid_chars = r'[<>:"/\\|?*]+'
+        sanitized = re.sub(invalid_chars, '_', name.strip().lower())
+        # Replace multiple underscores or spaces with a single underscore
+        sanitized = re.sub(r'[_\s]+', '_', sanitized)
+        return sanitized.strip('_')
+    
+    df["Normalized_Feature"] = df["Sub_Feature"].apply(sanitize_filename)
+    df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
     df["Description"] = df["Description"].str.replace(r"\s+", " ", regex=True).str.strip()  # Normalize spacing
+    
     return df
 
 def extract_steps(row):
@@ -88,96 +115,105 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     else:
         raise ValueError("Header file path must be provided.")
 
-    # Get precondition test case (only one expected)
-    precondition_row = df[df["Test_Case_Type"] == "precondition"]
-    precondition = precondition_row.iloc[0] if not precondition_row.empty else None
-    precondition_steps = extract_steps(precondition) if precondition is not None else [] 
-    precondition_issues = precondition.get("link issue Test", "").strip() if precondition is not None else ""
-    precondition_desc = re.sub(r"\s+", " ", precondition.get("Description", "Precondition").strip()) if precondition is not None else ""
+    # Sanitize feature tag for file names
+    def sanitize_filename(name):
+        if not isinstance(name, str):
+            return ""
+        invalid_chars = r'[<>:"/\\|?*]+'
+        sanitized = re.sub(invalid_chars, '_', name.strip())
+        sanitized = re.sub(r'[_\s]+', '_', sanitized)
+        return sanitized.strip('_')
 
-    # Remove precondition from the main dataframe
-    df = df[df["Test_Case_Type"] != "precondition"]
+    # Get precondition test case (only one expected per feature)
+    grouped = df.groupby("Normalized_Feature")
+    
+    for feature_norm, feature_group in grouped:
+        # Filter precondition and other test cases
+        precondition_row = feature_group[feature_group["Test_Case_Type"] == "precondition"]
+        other_tests = feature_group[feature_group["Test_Case_Type"] != "precondition"]
+        
+        precondition = precondition_row.iloc[0] if not precondition_row.empty else None
+        precondition_steps = extract_steps(precondition) if precondition is not None else []
+        precondition_issues = precondition.get("link issue Test", "").strip() if precondition is not None else ""
+        precondition_desc = re.sub(r"\s+", " ", precondition.get("Description", "Precondition").strip()) if precondition is not None else ""
 
-    grouped = df.groupby(["Normalized_Feature", "Test_Case_Type"])
-
-    for (feature_norm, category), group_df in grouped:
-        feature_tag = group_df.iloc[0]["Sub_Feature"].strip().replace(" ", "_")
         # Create a folder for the feature
         feature_dir = os.path.join(output_dir, feature_norm)
         os.makedirs(feature_dir, exist_ok=True)
-        # Save the robot file in the feature-specific folder
-        full_filename = f"{feature_tag.upper()}_{category.upper()}.robot"
-        file_path = os.path.join(feature_dir, full_filename)
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(header_content)
-            f.write("*** Test Cases ***\n\n")
-            tc_index = 1
+        # Group other test cases by Test_Case_Type
+        category_groups = other_tests.groupby("Test_Case_Type")
+        
+        for category, group_df in category_groups:
+            feature_tag = sanitize_filename(group_df.iloc[0]["Sub_Feature"].strip())
+            full_filename = f"{feature_tag.upper()}_{category.upper()}.robot"
+            file_path = os.path.join(feature_dir, full_filename)
 
-            # Add precondition test case as TC001
-            if precondition is not None:
-                f.write(f"TC{tc_index:03d}: [SYS5] {precondition_desc}\n")
-                f.write(f"    [Documentation]    REQ_{precondition_issues}\n")
-                f.write(f"    [Tags]    {feature_tag}\n")
-                f.write(f"    [Description]    {precondition_desc}\n")
-                f.write(f"    [Feature]    {feature_tag}\n")
-                f.write(f"    [Feature_group]   {feature_tag}_precondition \n\n")
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(header_content)
+                f.write("*** Test Cases ***\n\n")
+                tc_index = 1
 
-                for step in precondition_steps:
-                    clean_step = re.sub(r"^\d+\.\s*", "", step.strip())
-                    if ":" in clean_step:
-                        keyword, value = clean_step.split(":", 1)
-                        keyword_clean = keyword.strip().lower()
-                        value_clean = value.strip()
-                    else:
-                        keyword_clean = clean_step.strip().lower()
-                        value_clean = ""
+                # Add precondition test case as TC001 if exists
+                if precondition is not None:
+                    f.write(f"TC{tc_index:03d}: [SYS5] {precondition_desc}\n")
+                    f.write(f"    [Documentation]    REQ_{precondition_issues}\n")
+                    f.write(f"    [Tags]    {feature_tag}\n")
+                    f.write(f"    [Description]    {precondition_desc}\n")
+                    f.write(f"    [Feature]    {feature_tag}\n")
+                    f.write(f"    [Feature_group]   {feature_tag}_precondition\n\n")
 
-                    replacement_keyword = keyword_map.get(keyword_clean, keyword_clean).strip()
+                    for step in precondition_steps:
+                        clean_step = re.sub(r"^\d+\.\s*", "", step.strip())
+                        if ":" in clean_step:
+                            keyword, value = clean_step.split(":", 1)
+                            keyword_clean = keyword.strip().lower()
+                            value_clean = value.strip()
+                        else:
+                            keyword_clean = clean_step.strip().lower()
+                            value_clean = ""
 
-                    if "do" in replacement_keyword.lower():
-                        f.write(f"    {replacement_keyword}\n")
-                    elif value_clean:
-                        f.write(f"    {replacement_keyword}    {value_clean}\n")
-                    else:
-                        f.write(f"    {replacement_keyword}\n")
+                        replacement_keyword = keyword_map.get(keyword_clean, keyword_clean).strip()
 
-                f.write("\n")
-                tc_index += 1
+                        if "do" in replacement_keyword.lower() or not value_clean:
+                            f.write(f"    {replacement_keyword}\n")
+                        else:
+                            f.write(f"    {replacement_keyword}    {value_clean}\n")
 
-            # Add category-specific test cases
-            for _, row in group_df.iterrows():
-                test_name = re.sub(r"\s+", " ", row.get("Description", "Unnamed Test Case").strip())
-                linked_issues = row.get("link issue Test", "").strip()
-                full_group = f"{feature_tag}_{category.lower()}"  
-                f.write(f"TC{tc_index:03d}: [SYS5] {test_name}\n")
-                f.write(f"    [Documentation]    REQ_{linked_issues}\n")
-                f.write(f"    [Tags]    {feature_tag}\n")
-                f.write(f"    [Description]    {test_name}\n")
-                f.write(f"    [Feature]    {feature_tag}\n")
-                f.write(f"    [Feature_group]    {full_group}\n\n")
-                tc_index += 1
+                    f.write("\n")
+                    tc_index += 1
 
-                steps = extract_steps(row)
-                for step in steps:
-                    clean_step = re.sub(r"^\d+\.\s*", "", step.strip())
-                    if ":" in clean_step:
-                        keyword, value = clean_step.split(":", 1)
-                        keyword_clean = keyword.strip().lower()
-                        value_clean = value.strip()
-                    else:
-                        keyword_clean = clean_step.strip().lower()
-                        value_clean = ""
+                # Add category-specific test cases
+                for _, row in group_df.iterrows():
+                    test_name = re.sub(r"\s+", " ", row.get("Description", "Unnamed Test Case").strip())
+                    linked_issues = row.get("link issue Test", "").strip()
+                    full_group = f"{feature_tag}_{category.lower()}"
+                    f.write(f"TC{tc_index:03d}: [SYS5] {test_name}\n")
+                    f.write(f"    [Documentation]    REQ_{linked_issues}\n")
+                    f.write(f"    [Tags]    {feature_tag}\n")
+                    f.write(f"    [Description]    {test_name}\n")
+                    f.write(f"    [Feature]    {feature_tag}\n")
+                    f.write(f"    [Feature_group]    {full_group}\n\n")
+                    tc_index += 1
 
-                    replacement_keyword = keyword_map.get(keyword_clean, keyword_clean).strip()
+                    steps = extract_steps(row)
+                    for step in steps:
+                        clean_step = re.sub(r"^\d+\.\s*", "", step.strip())
+                        if ":" in clean_step:
+                            keyword, value = clean_step.split(":", 1)
+                            keyword_clean = keyword.strip().lower()
+                            value_clean = value.strip()
+                        else:
+                            keyword_clean = clean_step.strip().lower()
+                            value_clean = ""
 
-                    if "do" in replacement_keyword.lower():
-                        f.write(f"    {replacement_keyword}\n")
-                    elif value_clean:
-                        f.write(f"    {replacement_keyword}    {value_clean}\n")
-                    else:
-                        f.write(f"    {replacement_keyword}\n")
+                        replacement_keyword = keyword_map.get(keyword_clean, keyword_clean).strip()
 
-                f.write("\n")
+                        if "do" in replacement_keyword.lower() or not value_clean:
+                            f.write(f"    {replacement_keyword}\n")
+                        else:
+                            f.write(f"    {replacement_keyword}    {value_clean}\n")
+
+                    f.write("\n")
 
     return output_dir
