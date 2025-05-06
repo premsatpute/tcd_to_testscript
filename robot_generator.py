@@ -39,26 +39,22 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     # Reset index after filtering
     df = df.reset_index(drop=True)
     
-    # Apply preprocessing to ensure all columns are strings and handle NaN
-    df["Labels"] = df["Labels"].fillna("").astype(str).str.strip()
-    df["Action"] = df["Action"].fillna("").astype(str).str.strip()
-    df["Expected Results"] = df["Expected Results"].fillna("").astype(str).str.strip()
-    df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
-    df["link issue Test"] = df["link issue Test"].fillna("").astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
-    
-    # Derive additional columns
-    df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if x and "_" in x else "")
-    df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if x and len(x.split("_")) > 3 else "")
+    # Apply preprocessing
+    df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
+    df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
     
     def sanitize_filename(name):
-        if not isinstance(name, str) or not name:
-            return "unknown_feature"
+        if not isinstance(name, str):
+            return ""
         invalid_chars = r'[<>:"/\\|?*]+'
         sanitized = re.sub(invalid_chars, '_', name.strip().lower())
         sanitized = re.sub(r'[_\s]+', '_', sanitized)
-        return sanitized.strip('_') or "unknown_feature"
+        return sanitized.strip('_')
     
     df["Normalized_Feature"] = df["Sub_Feature"].apply(sanitize_filename)
+    df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
+    # Ensure Description is a non-empty string
+    df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
     
     return df, error_df
 
@@ -68,31 +64,9 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
         "Precondition", "LogicalCombination", "FailureMode", "PowerMode", "Configuration", "VoltageMode"
     }
     
-    # Helper function to check if value is valid string
-    def is_valid_string(value):
-        return isinstance(value, str) and value.strip()
-    
     # Validate Labels
     labels = row.get("Labels", "")
-    if pd.isna(labels):
-        errors.append({
-            "Row": row_num,
-            "Column": "Labels",
-            "Cell": f"{col_to_letter.get('Labels', 'B')}{row_num}",
-            "Value": "NaN",
-            "Error": "Missing Labels",
-            "Issue Details": "Labels column must not be empty or NaN"
-        })
-    elif not is_valid_string(labels):
-        errors.append({
-            "Row": row_num,
-            "Column": "Labels",
-            "Cell": f"{col_to_letter.get('Labels', 'B')}{row_num}",
-            "Value": str(labels),
-            "Error": "Invalid Labels",
-            "Issue Details": f"Labels must be a non-empty string, got {type(labels).__name__}"
-        })
-    else:
+    if isinstance(labels, str) and labels.strip():
         pattern = re.compile(
             r"^[W616\]_FV_((Alert|TT|Chime)_)?[A-Z_]+_(" +
             "|".join(valid_test_types) + ")$",
@@ -102,7 +76,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
             errors.append({
                 "Row": row_num,
                 "Column": "Labels",
-                "Cell": f"{col_to_letter.get('Labels', 'B')}{row_num}",
+                "Cell": f"{col_to_letter['Labels']}{row_num}",
                 "Value": labels,
                 "Error": "Invalid label format",
                 "Issue Details": f"Expected format: PROJECT[ID]_FV_[TYPEOFFEATURE]_FEATURENAME_TESTCASETYPE, with TYPEOFFEATURE in {{Alert, TT, Chime}} (optional) and TESTCASETYPE in {valid_test_types}"
@@ -111,39 +85,30 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
             errors.append({
                 "Row": row_num,
                 "Column": "Labels",
-                "Cell": f"{col_to_letter.get('Labels', 'B')}{row_num}",
+                "Cell": f"{col_to_letter['Labels']}{row_num}",
                 "Value": labels,
                 "Error": "Invalid characters in label",
                 "Issue Details": "Labels must not contain special characters except underscores"
             })
+    elif not labels:
+        errors.append({
+            "Row": row_num,
+            "Column": "Labels",
+            "Cell": f"{col_to_letter['Labels']}{row_num}",
+            "Value": "",
+            "Error": "Empty label",
+            "Issue Details": "Labels column must not be empty"
+        })
     
     # Validate Action
     action = row.get("Action", "")
-    if pd.isna(action):
-        errors.append({
-            "Row": row_num,
-            "Column": "Action",
-            "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
-            "Value": "NaN",
-            "Error": "Missing Action",
-            "Issue Details": "Action column must not be empty or NaN unless intentionally blank"
-        })
-    elif not is_valid_string(action):
-        errors.append({
-            "Row": row_num,
-            "Column": "Action",
-            "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
-            "Value": str(action),
-            "Error": "Invalid Action",
-            "Issue Details": f"Action must be a non-empty string, got {type(action).__name__}"
-        })
-    else:
+    if isinstance(action, str) and action.strip():
         lines = action.split("\n")
         if not any("Steps:" in line for line in lines):
             errors.append({
                 "Row": row_num,
                 "Column": "Action",
-                "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
+                "Cell": f"{col_to_letter['Action']}{row_num}",
                 "Value": action,
                 "Error": "Missing Steps: header",
                 "Issue Details": "Action must start with 'Steps:' followed by numbered steps"
@@ -159,7 +124,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                         errors.append({
                             "Row": row_num,
                             "Column": "Action",
-                            "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
+                            "Cell": f"{col_to_letter['Action']}{row_num}",
                             "Value": line.strip(),
                             "Error": "Missing step number",
                             "Issue Details": "Each step must start with a number (e.g., '1.')"
@@ -174,7 +139,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                                 errors.append({
                                     "Row": row_num,
                                     "Column": "Action",
-                                    "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
+                                    "Cell": f"{col_to_letter['Action']}{row_num}",
                                     "Value": clean_line,
                                     "Error": "Missing value after colon",
                                     "Issue Details": "Steps with a colon must have a value (e.g., 'keyword: value')"
@@ -182,37 +147,28 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                         else:
                             keyword_clean = clean_line.strip().lower()
                             value_clean = ""
-                        if keyword_clean and keyword_clean not in keyword_set:
+                        if keyword_clean not in keyword_set:
                             errors.append({
                                 "Row": row_num,
                                 "Column": "Action",
-                                "Cell": f"{col_to_letter.get('Action', 'C')}{row_num}",
+                                "Cell": f"{col_to_letter['Action']}{row_num}",
                                 "Value": clean_line,
                                 "Error": "Unmapped keyword",
                                 "Issue Details": f"Keyword '{keyword_clean}' not found in keyword mapping"
                             })
+    elif not action:
+        errors.append({
+            "Row": row_num,
+            "Column": "Action",
+            "Cell": f"{col_to_letter['Action']}{row_num}",
+            "Value": "",
+            "Error": "Empty Action",
+            "Issue Details": "Action column must not be empty unless intentionally blank"
+        })
     
     # Validate Expected Results
     expected = row.get("Expected Results", "")
-    if pd.isna(expected):
-        errors.append({
-            "Row": row_num,
-            "Column": "Expected Results",
-            "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
-            "Value": "NaN",
-            "Error": "Missing Expected Results",
-            "Issue Details": "Expected Results column must not be empty or NaN unless no verification is required"
-        })
-    elif not is_valid_string(expected):
-        errors.append({
-            "Row": row_num,
-            "Column": "Expected Results",
-            "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
-            "Value": str(expected),
-            "Error": "Invalid Expected Results",
-            "Issue Details": f"Expected Results must be a non-empty string, got {type(expected).__name__}"
-        })
-    else:
+    if isinstance(expected, str) and expected.strip():
         lines = expected.split("\n")
         for line in lines:
             if line.strip() and re.match(r"^\d+\.", line):
@@ -227,7 +183,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                             errors.append({
                                 "Row": row_num,
                                 "Column": "Expected Results",
-                                "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
+                                "Cell": f"{col_to_letter['Expected Results']}{row_num}",
                                 "Value": clean_value,
                                 "Error": "Missing value after colon",
                                 "Issue Details": "Expected results with a colon must have a value (e.g., 'keyword: value')"
@@ -235,11 +191,11 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                     else:
                         keyword_clean = clean_value.strip().lower()
                         value_clean = ""
-                    if keyword_clean and keyword_clean not in keyword_set:
+                    if keyword_clean not in keyword_set:
                         errors.append({
                             "Row": row_num,
                             "Column": "Expected Results",
-                            "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
+                            "Cell": f"{col_to_letter['Expected Results']}{row_num}",
                             "Value": clean_value,
                             "Error": "Unmapped keyword",
                             "Issue Details": f"Keyword '{keyword_clean}' not found in keyword mapping"
@@ -248,7 +204,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                     errors.append({
                         "Row": row_num,
                         "Column": "Expected Results",
-                        "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
+                        "Cell": f"{col_to_letter['Expected Results']}{row_num}",
                         "Value": line.strip(),
                         "Error": "Invalid step format",
                         "Issue Details": "Expected Results must have numbered steps (e.g., '1. Verifyscreen: VALUE')"
@@ -257,52 +213,19 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                 errors.append({
                     "Row": row_num,
                     "Column": "Expected Results",
-                    "Cell": f"{col_to_letter.get('Expected Results', 'D')}{row_num}",
+                    "Cell": f"{col_to_letter['Expected Results']}{row_num}",
                     "Value": line.strip(),
                     "Error": "Missing step number",
                     "Issue Details": "Each expected result must start with a number (e.g., '1.')"
                 })
-    
-    # Validate Description
-    description = row.get("Description", "")
-    if pd.isna(description):
+    elif not expected:
         errors.append({
             "Row": row_num,
-            "Column": "Description",
-            "Cell": f"{col_to_letter.get('Description', 'E')}{row_num}",
-            "Value": "NaN",
-            "Error": "Missing Description",
-            "Issue Details": "Description column must not be empty or NaN"
-        })
-    elif not is_valid_string(description):
-        errors.append({
-            "Row": row_num,
-            "Column": "Description",
-            "Cell": f"{col_to_letter.get('Description', 'E')}{row_num}",
-            "Value": str(description),
-            "Error": "Invalid Description",
-            "Issue Details": f"Description must be a non-empty string, got {type(description).__name__}"
-        })
-    
-    # Validate link issue Test
-    link_issue = row.get("link issue Test", "")
-    if pd.isna(link_issue):
-        errors.append({
-            "Row": row_num,
-            "Column": "link issue Test",
-            "Cell": f"{col_to_letter.get('link issue Test', 'F')}{row_num}",
-            "Value": "NaN",
-            "Error": "Missing link issue Test",
-            "Issue Details": "link issue Test column must not be empty or NaN"
-        })
-    elif not is_valid_string(link_issue):
-        errors.append({
-            "Row": row_num,
-            "Column": "link issue Test",
-            "Cell": f"{col_to_letter.get('link issue Test', 'F')}{row_num}",
-            "Value": str(link_issue),
-            "Error": "Invalid link issue Test",
-            "Issue Details": f"link issue Test must be a non-empty string, got {type(link_issue).__name__}"
+            "Column": "Expected Results",
+            "Cell": f"{col_to_letter['Expected Results']}{row_num}",
+            "Value": "",
+            "Error": "Empty Expected Results",
+            "Issue Details": "Expected Results column must not be empty unless no verification is required"
         })
     
     return errors
@@ -310,13 +233,13 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
 def extract_steps(row):
     action_steps = []
     expected_steps = {}
+    action_lines = []
+    expected_results_str = ""
     
-    # Safely handle Action
-    action = row.get("Action", "")
-    if pd.isna(action) or not isinstance(action, str):
+    if isinstance(row.get("Action", ""), float) and np.isnan(row.get("Action", "")):
         action_lines = []
     else:
-        action_lines = action.split("\n")
+        action_lines = str(row.get("Action", "")).split("\n")
     
     extracting = False
     for line in action_lines:
@@ -327,13 +250,13 @@ def extract_steps(row):
             clean_line = re.sub(r"^\d+\.\s*", "", line.strip())
             action_steps.append(clean_line)
     
-    # Safely handle Expected Results
     expected_results = row.get("Expected Results", "")
-    if pd.isna(expected_results) or not isinstance(expected_results, str):
-        expected_lines = []
+    if isinstance(expected_results, float) and np.isnan(expected_results):
+        expected_results_str = ""
     else:
-        expected_lines = expected_results.split("\n")
+        expected_results_str = str(expected_results)
     
+    expected_lines = expected_results_str.split("\n")
     for line in expected_lines:
         if line.strip() and re.match(r"^\d+\.", line):
             parts = line.split(".", 1)
@@ -341,7 +264,7 @@ def extract_steps(row):
                 step_num = int(parts[0].strip())
                 clean_value = parts[1].strip()
                 expected_steps[step_num] = clean_value
-            except (ValueError, IndexError):
+            except ValueError:
                 continue
     
     final_steps = []
@@ -376,12 +299,12 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         raise ValueError("Header file path must be provided.")
     
     def sanitize_filename(name):
-        if not isinstance(name, str) or not name:
-            return "unknown_feature"
+        if not isinstance(name, str):
+            return ""
         invalid_chars = r'[<>:"/\\|?*]+'
         sanitized = re.sub(invalid_chars, '_', name.strip())
         sanitized = re.sub(r'[_\s]+', '_', sanitized)
-        return sanitized.strip('_') or "unknown_feature"
+        return sanitized.strip('_')
     
     grouped = df.groupby("Normalized_Feature")
     
@@ -391,9 +314,10 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         
         precondition = precondition_row.iloc[0] if not precondition_row.empty else None
         precondition_steps = extract_steps(precondition) if precondition is not None else []
-        precondition_issues = str(precondition.get("link issue Test", "")).strip() if precondition is not None else ""
-        precondition_desc = str(precondition.get("Description", "Precondition")).strip() if precondition is not None else "Precondition"
-        precondition_desc = re.sub(r"\s+", " ", precondition_desc) if precondition_desc else "Precondition"
+        precondition_issues = precondition.get("link issue Test", "").strip() if precondition is not None else ""
+        # Safely handle precondition Description
+        precondition_desc = precondition.get("Description", "Precondition") if precondition is not None else "Precondition"
+        precondition_desc = re.sub(r"\s+", " ", str(precondition_desc).strip())
         
         feature_dir = os.path.join(output_dir, feature_norm)
         os.makedirs(feature_dir, exist_ok=True)
@@ -401,7 +325,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         category_groups = other_tests.groupby("Test_Case_Type")
         
         for category, group_df in category_groups:
-            feature_tag = sanitize_filename(str(group_df.iloc[0]["Sub_Feature"]).strip())
+            feature_tag = sanitize_filename(group_df.iloc[0]["Sub_Feature"].strip())
             full_filename = f"{feature_tag.upper()}_{category.upper()}.robot"
             file_path = os.path.join(feature_dir, full_filename)
             
@@ -439,9 +363,10 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                     tc_index += 1
                 
                 for _, row in group_df.iterrows():
-                    description = str(row.get("Description", "Unnamed Test Case")).strip()
-                    test_name = re.sub(r"\s+", " ", description) if description else "Unnamed Test Case"
-                    linked_issues = str(row.get("link issue Test", "")).strip()
+                    # Safely handle Description, converting to string and handling NaN
+                    description = row.get("Description", "Unnamed Test Case")
+                    test_name = re.sub(r"\s+", " ", str(description).strip())
+                    linked_issues = row.get("link issue Test", "").strip()
                     full_group = f"{feature_tag}_{category.lower()}"
                     f.write(f"TC{tc_index:03d}: [SYS5] {test_name}\n")
                     f.write(f"    [Documentation]    REQ_{linked_issues}\n")
