@@ -115,6 +115,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
             })
         else:
             extracting = False
+            step_numbers = []
             for line in lines:
                 if "Steps:" in line:
                     extracting = True
@@ -130,6 +131,8 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                             "Issue Details": "Each step must start with a number (e.g., '1.')"
                         })
                     else:
+                        step_num = int(re.match(r"^(\d+)\.\s*", line).group(1))
+                        step_numbers.append(step_num)
                         clean_line = re.sub(r"^\d+\.\s*", "", line.strip())
                         if ":" in clean_line:
                             keyword, value = clean_line.split(":", 1)
@@ -156,6 +159,19 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
                                 "Error": "Unmapped keyword",
                                 "Issue Details": f"Keyword '{keyword_clean}' not found in keyword mapping"
                             })
+            
+            # Validate step number sequence
+            if step_numbers:
+                expected_sequence = list(range(1, len(step_numbers) + 1))
+                if step_numbers != expected_sequence:
+                    errors.append({
+                        "Row": row_num,
+                        "Column": "Action",
+                        "Cell": f"{col_to_letter['Action']}{row_num}",
+                        "Value": ", ".join(map(str, step_numbers)),
+                        "Error": "Incorrect step sequence",
+                        "Issue Details": f"Step numbers must be sequential starting from 1 (e.g., 1., 2., 3.). Found: {step_numbers}"
+                    })
     elif not action:
         errors.append({
             "Row": row_num,
