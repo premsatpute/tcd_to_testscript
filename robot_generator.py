@@ -374,7 +374,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                             f.write(f"    {replacement_keyword}\n")
                         else:
                             f.write(f"    {replacement_keyword}    {value_clean}\n")
-                    
+                    f.write(f"    Set Normal Condition\n")
                     f.write("\n")
                     tc_index += 1
                 
@@ -409,7 +409,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                             f.write(f"    {replacement_keyword}\n")
                         else:
                             f.write(f"    {replacement_keyword}    {value_clean}\n")
-                    
+                    f.write(f"    Set Normal Condition\n")
                     f.write("\n")
     
     return output_dir
