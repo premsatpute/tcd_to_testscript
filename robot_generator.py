@@ -322,6 +322,24 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         sanitized = re.sub(r'[_\s]+', '_', sanitized)
         return sanitized.strip('_')
     
+    # Define the desired order of Test_Case_Type
+    test_case_type_order = {
+        "logicalcombination": 1,
+        "failuremode": 2,
+        "powermode": 3,
+        "voltagemode": 4,
+        "configuration": 5
+    }
+    
+    # Define filename prefixes for each Test_Case_Type
+    test_case_type_prefix = {
+        "logicalcombination": "TC00101",
+        "failuremode": "TC00201",
+        "powermode": "TC00301",
+        "voltagemode": "TC00401",
+        "configuration": "TC00501"
+    }
+    
     grouped = df.groupby("Normalized_Feature")
     
     for feature_norm, feature_group in grouped:
@@ -338,11 +356,20 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         feature_dir = os.path.join(output_dir, feature_norm)
         os.makedirs(feature_dir, exist_ok=True)
         
+        # Group by Test_Case_Type and sort according to the defined order
         category_groups = other_tests.groupby("Test_Case_Type")
+        # Convert to list of (category, group) and sort
+        sorted_groups = sorted(
+            category_groups,
+            key=lambda x: test_case_type_order.get(x[0].lower(), float('inf'))
+        )
         
-        for category, group_df in category_groups:
+        for category, group_df in sorted_groups:
             feature_tag = sanitize_filename(group_df.iloc[0]["Sub_Feature"].strip())
-            full_filename = f"{feature_tag.upper()}_{category.upper()}.robot"
+            # Use the new nomenclature: TC<identifier>_<FEATURE_TAG>_<TEST_CASE_TYPE>.robot
+            category_lower = category.lower()
+            prefix = test_case_type_prefix.get(category_lower, "TC00000")  # Default prefix for unexpected types
+            full_filename = f"{prefix}_{feature_tag.upper()}_{category.upper()}.robot"
             file_path = os.path.join(feature_dir, full_filename)
             
             with open(file_path, "w", encoding="utf-8") as f:
@@ -374,7 +401,10 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                             f.write(f"    {replacement_keyword}\n")
                         else:
                             f.write(f"    {replacement_keyword}    {value_clean}\n")
+                    
+                    # Append Set Normal Condition as the last step
                     f.write(f"    Set Normal Condition\n")
+                    
                     f.write("\n")
                     tc_index += 1
                 
@@ -385,7 +415,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                     linked_issues = row.get("link issue Test", "").strip()
                     full_group = f"{feature_tag}_{category.lower()}"
                     f.write(f"TC{tc_index:03d}: [SYS5] {test_name}\n")
-                    f.write(f"    [Documentation]    REQ_{linked_issues}\n")
+                    f.write(f"    [Documentation]   REQ_{linked_issues}\n")
                     f.write(f"    [Tags]    {feature_tag}\n")
                     f.write(f"    [Description]    {test_name}\n")
                     f.write(f"    [Feature]    {feature_tag}\n")
@@ -409,7 +439,10 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                             f.write(f"    {replacement_keyword}\n")
                         else:
                             f.write(f"    {replacement_keyword}    {value_clean}\n")
+                    
+                    # Append Set Normal Condition as the last step
                     f.write(f"    Set Normal Condition\n")
+                    
                     f.write("\n")
     
     return output_dir
