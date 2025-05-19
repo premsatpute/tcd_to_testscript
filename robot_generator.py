@@ -11,7 +11,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     original_df = pd.read_excel(tcd_filepath)
     
     # Validate the original DataFrame to preserve row indices
-    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test"]
+    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test","Planned Execution"]
     col_to_letter_col = list(original_df.columns)
     error_list = []
     keyword_set = set(keyword_mapping_df["TCD Keywords"].str.strip().str.lower())
@@ -28,33 +28,48 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     error_df = pd.DataFrame(error_list, columns=["Row", "Column", "Cell", "Value", "Error", "Issue Details"])
     
     # Now preprocess the DataFrame for script generation
-    df = original_df[required_columns].copy()
+    df = original_df.copy()
     
-    # Filter out completely empty rows
-    df = df.dropna(how='all')
+    # Check if "Planned Execution" column exists (case-insensitive)
     
-    # Filter out rows where only 'Labels' has a value
-    df = df.dropna(subset=['Action', 'Expected Results', 'Description'], how='all')
     
-    # Reset index after filtering
-    df = df.reset_index(drop=True)
     
-    # Apply preprocessing
-    df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
-    df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
     
-    def sanitize_filename(name):
-        if not isinstance(name, str):
-            return ""
-        invalid_chars = r'[<>:"/\\|?*]+'
-        sanitized = re.sub(invalid_chars, '_', name.strip().lower())
-        sanitized = re.sub(r'[_\s]+', '_', sanitized)
-        return sanitized.strip('_')
+    # Filter rows where "Planned Execution" is "Planned Automation" (case-insensitive)
+    df = df[df["Planned Execution"].str.lower() == "planned automation"]
     
-    df["Normalized_Feature"] = df["Sub_Feature"].apply(sanitize_filename)
-    df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
-    # Ensure Description is a non-empty string
-    df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+    # If no rows match the filter, return an empty DataFrame (script generation will handle this)
+    if df.empty:
+        df = pd.DataFrame(columns=required_columns)
+    else:
+        # Keep only the required columns
+        df = df[required_columns]
+        
+        # Filter out completely empty rows
+        df = df.dropna(how='all')
+        
+        # Filter out rows where only 'Labels' has a value
+        df = df.dropna(subset=['Action', 'Expected Results', 'Description'], how='all')
+        
+        # Reset index after filtering
+        df = df.reset_index(drop=True)
+        
+        # Apply preprocessing
+        df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
+        df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
+        
+        def sanitize_filename(name):
+            if not isinstance(name, str):
+                return ""
+            invalid_chars = r'[<>:"/\\|?*]+'
+            sanitized = re.sub(invalid_chars, '_', name.strip().lower())
+            sanitized = re.sub(r'[_\s]+', '_', sanitized)
+            return sanitized.strip('_')
+        
+        df["Normalized_Feature"] = df["Sub_Feature"].apply(sanitize_filename)
+        df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
+        # Ensure Description is a non-empty string
+        df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
     
     return df, error_df
 
@@ -68,7 +83,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
     labels = row.get("Labels", "")
     if isinstance(labels, str) and labels.strip():
         pattern = re.compile(
-            r"^[W616\]_FV_((Alert|TT|Chime)_)?[A-Z_]+_(" +
+            r"^[W616|MSIL|Nissan\]_FV_((Alert|TT|Chime)_)?[A-Z_]+_(" +
             "|".join(valid_test_types) + ")$",
             re.IGNORECASE
         )
