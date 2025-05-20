@@ -339,8 +339,8 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     # Define the desired order of Test_Case_Type
     test_case_type_order = {
         "logicalcombination": 1,
-        "failuremode": 2,
-        "powermode": 3,
+        "failuremode": 3,
+        "powermode": 2,
         "voltagemode": 4,
         "configuration": 5
     }
