@@ -11,7 +11,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     original_df = pd.read_excel(tcd_filepath)
     
     # Validate the original DataFrame to preserve row indices
-    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test","Planned Execution"]
+    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test","Planned Execution","Summary"]
     col_to_letter_col = list(original_df.columns)
     error_list = []
     keyword_set = set(keyword_mapping_df["TCD Keywords"].str.strip().str.lower())
@@ -29,10 +29,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     
     # Now preprocess the DataFrame for script generation
     df = original_df.copy()
-    
-    # Check if "Planned Execution" column exists (case-insensitive)
-    
-    
+
     
     
     # Filter rows where "Planned Execution" is "Planned Automation" (case-insensitive)
@@ -49,14 +46,15 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
         df = df.dropna(how='all')
         
         # Filter out rows where only 'Labels' has a value
-        df = df.dropna(subset=['Action', 'Expected Results', 'Description'], how='all')
+        df = df.dropna(subset=['Action', 'Expected Results', 'Description','Summary'], how='all')
         
         # Reset index after filtering
         df = df.reset_index(drop=True)
         
         # Apply preprocessing
         df["Test_Case_Type"] = df["Labels"].apply(lambda x: x.split("_")[-1].strip().lower().replace(" ", "") if isinstance(x, str) else "")
-        df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[2:-1]).strip() if isinstance(x, str) else "")
+        df["Sub_Feature"] = df["Labels"].apply(lambda x: "_".join(x.split("_")[3:-1]).strip() if isinstance(x, str) else "")
+        df["feature"] = df["Labels"].apply(lambda x: x.split("_")[2].strip().lower().replace(" ", "") if isinstance(x, str) else "")
         
         def sanitize_filename(name):
             if not isinstance(name, str):
@@ -70,6 +68,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
         df["link issue Test"] = df["link issue Test"].astype(str).str.replace(r"[\n\r;,\s]+", "_", regex=True).str.strip("_")
         # Ensure Description is a non-empty string
         df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+        df["Summary"] = df["Summary"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
     
     return df, error_df
 
@@ -348,11 +347,11 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     
     # Define filename prefixes for each Test_Case_Type
     test_case_type_prefix = {
-        "logicalcombination": "TC00101",
-        "failuremode": "TC00201",
-        "powermode": "TC00301",
-        "voltagemode": "TC00401",
-        "configuration": "TC00501"
+        "logicalcombination": "TC0101",
+        "failuremode": "TC0201",
+        "powermode": "TC0301",
+        "voltagemode": "TC0401",
+        "configuration": "TC0501"
     }
     
     grouped = df.groupby("Normalized_Feature")
@@ -365,8 +364,12 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         precondition_steps = extract_steps(precondition) if precondition is not None else []
         precondition_issues = precondition.get("link issue Test", "").strip() if precondition is not None else ""
         # Safely handle precondition Description
-        precondition_desc = precondition.get("Description", "Precondition") if precondition is not None else "Precondition"
+        precondition_sum = precondition.get("Summary", "Precondition") if precondition is not None else "Precondition"
+        precondition_sum = re.sub(r"\s+", " ", str(precondition_sum).strip())
+        
+        precondition_desc = precondition.get("Summary", "Precondition") if precondition is not None else "Precondition"
         precondition_desc = re.sub(r"\s+", " ", str(precondition_desc).strip())
+        
         
         feature_dir = os.path.join(output_dir, feature_norm)
         os.makedirs(feature_dir, exist_ok=True)
@@ -380,11 +383,13 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
         )
         
         for category, group_df in sorted_groups:
-            feature_tag = sanitize_filename(group_df.iloc[0]["Sub_Feature"].strip())
+            sub_feature_tag = sanitize_filename(group_df.iloc[0]["Sub_Feature"].strip())
+            feature_tag = sanitize_filename(group_df.iloc[0]["feature"].strip())
+            
             # Use the new nomenclature: TC<identifier>_<FEATURE_TAG>_<TEST_CASE_TYPE>.robot
             category_lower = category.lower()
-            prefix = test_case_type_prefix.get(category_lower, "TC00000")  # Default prefix for unexpected types
-            full_filename = f"{prefix}_{feature_tag.upper()}_{category.upper()}.robot"
+            prefix = test_case_type_prefix.get(category_lower, "TC0")  # Default prefix for unexpected types
+            full_filename = f"{prefix}_{category.upper()}_{sub_feature_tag.upper()}_{feature_tag.upper()}.robot"       
             file_path = os.path.join(feature_dir, full_filename)
             
             with open(file_path, "w", encoding="utf-8") as f:
@@ -393,12 +398,12 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                 tc_index = 1
                 
                 if precondition is not None:
-                    f.write(f"TC{tc_index:03d}: [SYS5] {precondition_desc}\n")
+                    f.write(f"TC{tc_index:03d}: [SYS5] {precondition_sum}\n")
                     f.write(f"    [Documentation]    REQ_{precondition_issues}\n")
                     f.write(f"    [Tags]    {feature_tag}\n")
                     f.write(f"    [Description]    {precondition_desc}\n")
-                    f.write(f"    [Feature]    {feature_tag}\n")
-                    f.write(f"    [Feature_group]   {feature_tag}_precondition\n\n")
+                    f.write(f"    [Feature]    {sub_feature_tag}\n")
+                    f.write(f"    [Feature_group]   {sub_feature_tag}_precondition\n\n")
                     
                     for step in precondition_steps:
                         clean_step = re.sub(r"^\d+\.\s*", "", step.strip())
@@ -419,17 +424,19 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                     
                     # Append Set Normal Condition as the last step
                     f.write(f"    Set Normal Condition\n")
-                    
+                    f.write(f"    Sleep    20\n")
                     f.write("\n")
                     tc_index += 1
                 
                 for _, row in group_df.iterrows():
                     # Safely handle Description, converting to string and handling NaN
                     description = row.get("Description", "Unnamed Test Case")
+                    Summary= row.get("Summary", "Unnamed Test Case")
+                    Summary_f=re.sub(r"\s+", " ", str(Summary).strip())
                     test_name = re.sub(r"\s+", " ", str(description).strip())
                     linked_issues = row.get("link issue Test", "").strip()
                     full_group = f"{feature_tag}_{category.lower()}"
-                    f.write(f"TC{tc_index:03d}: [SYS5] {test_name}\n")
+                    f.write(f"TC{tc_index:03d}: [SYS5] {Summary_f}\n")
                     f.write(f"    [Documentation]   REQ_{linked_issues}\n")
                     f.write(f"    [Tags]    {feature_tag}\n")
                     f.write(f"    [Description]    {test_name}\n")
@@ -457,6 +464,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
                     
                     # Append Set Normal Condition as the last step
                     f.write(f"    Set Normal Condition\n")
+                    f.write(f"    Sleep    20\n")
                     
                     f.write("\n")
     
