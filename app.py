@@ -16,12 +16,16 @@ st.set_page_config(page_title="TCD to Robot Generator", layout="wide")
 # Initialize session state
 if "keyword_df" not in st.session_state:
     st.session_state.keyword_df = None
+if "original_keyword_df" not in st.session_state:
+    st.session_state.original_keyword_df = None
 if "show_mapping" not in st.session_state:
     st.session_state.show_mapping = False
 if "original_keyword_rows" not in st.session_state:
     st.session_state.original_keyword_rows = 0
 if "proceed_with_errors" not in st.session_state:
     st.session_state.proceed_with_errors = False
+if "use_updated_keywords" not in st.session_state:
+    st.session_state.use_updated_keywords = None
 
 # ---------- Branding ----------
 st.image("assets/visteon_logo.png", width=150)
@@ -31,10 +35,15 @@ This app converts your **TCD Excel sheet** into multiple structured `.robot` tes
 
 ### 📘 Instructions:
 1. Upload your **TCD Excel sheet**.
+
 2. Upload the **Keyword Mapping Excel sheet** (maps TCD keywords to Python functions).
+            
 3. Upload the **Header Template (.txt)** (contains imports and global settings).
+            
 4. View or modify the keyword mapping using the options below.
+            
 5. Validation errors will be displayed if found. You can choose to proceed with script generation.
+            
 6. Download the error report and generated scripts as a zip!
 
 ---
@@ -48,18 +57,22 @@ keyword_file = st.file_uploader("🧠 Upload Keyword Mapping Excel Sheet", type=
 if keyword_file:
     try:
         st.session_state.keyword_df = pd.read_excel(keyword_file)
+        st.session_state.original_keyword_df = st.session_state.keyword_df.copy()  
         st.session_state.original_keyword_rows = st.session_state.keyword_df.shape[0]
         if "TCD Keywords" not in st.session_state.keyword_df.columns or "Python Func Name" not in st.session_state.keyword_df.columns:
             st.error("Keyword Mapping Excel sheet must contain 'TCD Keywords' and 'Python Func Name' columns.")
             st.session_state.keyword_df = None
+            st.session_state.original_keyword_df = None
             st.session_state.original_keyword_rows = 0
         elif st.session_state.keyword_df.empty:
             st.error("Keyword Mapping Excel sheet is empty.")
             st.session_state.keyword_df = None
+            st.session_state.original_keyword_df = None
             st.session_state.original_keyword_rows = 0
     except Exception as e:
         st.error(f"Failed to read Keyword Mapping Excel sheet: {str(e)}")
         st.session_state.keyword_df = None
+        st.session_state.original_keyword_df = None
         st.session_state.original_keyword_rows = 0
 
 if st.session_state.keyword_df is not None:
@@ -122,7 +135,7 @@ if st.session_state.keyword_df is not None:
         save_mapping = st.radio("Save permanently?", ("Yes", "No"), key="save_mapping")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Always provide option to download current keyword mapping
+   
     st.markdown("**Current Keyword Mapping**")
     buffer = BytesIO()
     st.session_state.keyword_df.to_excel(buffer, index=False)
@@ -134,7 +147,7 @@ if st.session_state.keyword_df is not None:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     
-    # Handle new keywords
+    
     if st.session_state.keyword_df.shape[0] > st.session_state.original_keyword_rows:
         st.markdown("**New Keywords Added**")
         if save_mapping == "Yes":
@@ -145,6 +158,10 @@ if st.session_state.keyword_df is not None:
                 st.error(f"Failed to save keyword mapping: {str(e)}")
         else:
             st.info("New keywords will be used only for this session.")
+        
+      
+        st.markdown("**Choose Keyword Mapping for Script Generation**")
+        st.session_state.use
 
 header_file = st.file_uploader("📄 Upload Header Template (.txt)", type=["txt"])
 
@@ -212,6 +229,14 @@ if tcd_file and keyword_file and header_file:
         
         # Proceed with script generation if no errors or user confirms
         if error_df.empty or st.session_state.proceed_with_errors:
+            # Determine which keyword mapping to use
+            keyword_mapping_to_use = st.session_state.keyword_df
+            if st.session_state.use_updated_keywords == "No" and st.session_state.original_keyword_df is not None:
+                keyword_mapping_to_use = st.session_state.original_keyword_df
+                st.info("Using original keyword mapping for script generation.")
+            else:
+                st.info("Using updated keyword mapping for script generation.")
+            
             # Create a temporary output directory
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = f"robot_scripts_{timestamp}"
@@ -220,7 +245,7 @@ if tcd_file and keyword_file and header_file:
             # Generate robot files
             generate_separate_robot_files(
                 df=df_tcd,
-                keyword_mapping_df=st.session_state.keyword_df,
+                keyword_mapping_df=keyword_mapping_to_use,
                 header_file_path=header_path,
                 output_dir=output_dir
             )
