@@ -7,10 +7,10 @@ import regex as re
 import numpy as np
 
 def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
-    # Load the original TCD without any preprocessing
+    # LoadING the original TCD without any preprocessing
     original_df = pd.read_excel(tcd_filepath)
     
-    # Validate the original DataFrame to preserve row indices
+    # ValidatING the original DataFrame to preserve row indices
     required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test","Planned Execution","Summary"]
     col_to_letter_col = list(original_df.columns)
     error_list = []
@@ -82,7 +82,7 @@ def validate_tcd_row(row, keyword_set, row_num, col_to_letter):
     labels = row.get("Labels", "")
     if isinstance(labels, str) and labels.strip():
         pattern = re.compile(
-            r"^[W616|MSIL|Nissan\]_FV_((Alert|TT|Chime)_)?[A-Z_]+_(" +
+            r"^[W616|MSIL|Nissan\]_FV_((Alert|TT|Chime)_)?[A-Z0-9_]+_(" +
             "|".join(valid_test_types) + ")$",
             re.IGNORECASE
         )
@@ -338,9 +338,8 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     
     # Define the desired order of Test_Case_Type
     test_case_type_order = {
-        "logicalcombination": 1,
+        "logicalcombination": 1,"powermode": 2,
         "failuremode": 3,
-        "powermode": 2,
         "voltagemode": 4,
         "configuration": 5
     }
@@ -348,8 +347,8 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
     # Define filename prefixes for each Test_Case_Type
     test_case_type_prefix = {
         "logicalcombination": "TC0101",
-        "failuremode": "TC0201",
-        "powermode": "TC0301",
+        "powermode": "TC0201",
+        "failuremode": "TC0301",       
         "voltagemode": "TC0401",
         "configuration": "TC0501"
     }
