@@ -26,6 +26,18 @@ if "proceed_with_errors" not in st.session_state:
     st.session_state.proceed_with_errors = False
 if "use_updated_keywords" not in st.session_state:
     st.session_state.use_updated_keywords = None
+if "variants" not in st.session_state:
+    st.session_state.variants = ""
+if "type_of_testing" not in st.session_state:
+    st.session_state.type_of_testing = ""
+if "features" not in st.session_state:
+    st.session_state.features = ""
+if "sub_features" not in st.session_state:
+    st.session_state.sub_features = ""
+if "functionalities" not in st.session_state:
+    st.session_state.functionalities = ""
+if "functionality_prefixes" not in st.session_state:
+    st.session_state.functionality_prefixes = ""
 
 # ---------- Branding ----------
 st.image("assets/visteon_logo.png", width=150)
@@ -34,20 +46,37 @@ st.markdown("""
 This app converts your **TCD Excel sheet** into multiple structured `.robot` test scripts categorized by feature and type.
 
 ### 📘 Instructions:
-1. Upload your **TCD Excel sheet**.
-
-2. Upload the **Keyword Mapping Excel sheet** (maps TCD keywords to Python functions).
-            
-3. Upload the **Header Template (.txt)** (contains imports and global settings).
-            
-4. View or modify the keyword mapping using the options below.
-            
-5. Validation errors will be displayed if found. You can choose to proceed with script generation.
-            
-6. Download the error report and generated scripts as a zip!
+1. Enter the label format components (Variant, TypeOfTesting, Feature, SubFeature, Functionality).
+2. Upload your **TCD Excel sheet**.
+3. Upload the **Keyword Mapping Excel sheet** (maps TCD keywords to Python functions).
+4. Upload the **Header Template (.txt)** (contains imports and global settings).
+5. View or modify the keyword mapping using the options below.
+6. Validation errors will be displayed if found. You can choose to proceed with script generation.
+7. Download the error report and generated scripts as a zip!
 
 ---
 """)
+
+# ---------- Label Format Inputs ----------
+st.subheader("Define Label Format")
+st.markdown("Enter the components of your label format (comma-separated for multiple values).")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.session_state.variants = st.text_input("Variant (e.g., W616, MSIL, Nissan etc )", value=st.session_state.variants)
+    st.session_state.type_of_testing = st.text_input("Type of Testing (e.g., FV, FT etc)", value=st.session_state.type_of_testing)
+with col2:
+    st.session_state.features = st.text_input("Feature (e.g., Alert, Warning, Chime,TT etc)", value=st.session_state.features)
+    st.session_state.sub_features = st.text_input("Sub-Feature", value=st.session_state.sub_features)
+with col3:
+    st.session_state.functionalities = st.text_input("Functionality (e.g., precondition, logicalcombination)", value=st.session_state.functionalities)
+    st.session_state.functionality_prefixes = st.text_input("Functionality Prefixes (e.g., TC0101, TC0201)", value=st.session_state.functionality_prefixes)
+
+# Validate functionality and prefixes alignment
+if st.session_state.functionalities and st.session_state.functionality_prefixes:
+    funcs = [f.strip() for f in st.session_state.functionalities.split(",") if f.strip()]
+    prefixes = [p.strip() for p in st.session_state.functionality_prefixes.split(",") if p.strip()]
+    if len(funcs) != len(prefixes):
+        st.error("The number of Functionality entries must match the number of Functionality Prefixes.")
 
 # ---------- Upload Files ----------
 tcd_file = st.file_uploader("📂 Upload TCD Excel Sheet", type=["xlsx"])
@@ -57,7 +86,7 @@ keyword_file = st.file_uploader("🧠 Upload Keyword Mapping Excel Sheet", type=
 if keyword_file:
     try:
         st.session_state.keyword_df = pd.read_excel(keyword_file)
-        st.session_state.original_keyword_df = st.session_state.keyword_df.copy()  
+        st.session_state.original_keyword_df = st.session_state.keyword_df.copy()  # Store original keyword mapping
         st.session_state.original_keyword_rows = st.session_state.keyword_df.shape[0]
         if "TCD Keywords" not in st.session_state.keyword_df.columns or "Python Func Name" not in st.session_state.keyword_df.columns:
             st.error("Keyword Mapping Excel sheet must contain 'TCD Keywords' and 'Python Func Name' columns.")
@@ -135,7 +164,7 @@ if st.session_state.keyword_df is not None:
         save_mapping = st.radio("Save permanently?", ("Yes", "No"), key="save_mapping")
         st.markdown('</div>', unsafe_allow_html=True)
     
-   
+    # Always provide option to download current keyword mapping
     st.markdown("**Current Keyword Mapping**")
     buffer = BytesIO()
     st.session_state.keyword_df.to_excel(buffer, index=False)
@@ -147,7 +176,7 @@ if st.session_state.keyword_df is not None:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     
-    
+    # Handle new keywords
     if st.session_state.keyword_df.shape[0] > st.session_state.original_keyword_rows:
         st.markdown("**New Keywords Added**")
         if save_mapping == "Yes":
@@ -159,9 +188,13 @@ if st.session_state.keyword_df is not None:
         else:
             st.info("New keywords will be used only for this session.")
         
-      
+        # Ask user whether to use updated or original keyword mapping for script generation
         st.markdown("**Choose Keyword Mapping for Script Generation**")
-        st.session_state.use
+        st.session_state.use_updated_keywords = st.radio(
+            "Use updated keywords for script generation?",
+            ("Yes", "No"),
+            key="use_updated_keywords_radio"
+        )
 
 header_file = st.file_uploader("📄 Upload Header Template (.txt)", type=["txt"])
 
@@ -178,6 +211,12 @@ def validate_uploaded_files(tcd_file, keyword_file, header_file, keyword_df):
         return False
     if keyword_df is None:
         st.error("Keyword mapping is invalid or not loaded.")
+        return False
+    if not st.session_state.variants or not st.session_state.type_of_testing or not st.session_state.features  or not st.session_state.functionalities:
+        st.error("Please provide all label format components (Variant, TypeOfTesting, Feature, SubFeature, Functionality).")
+        return False
+    if not st.session_state.functionality_prefixes:
+        st.error("Please provide Functionality Prefixes for naming .robot files.")
         return False
     try:
         df_tcd = pd.read_excel(tcd_file)
@@ -294,4 +333,4 @@ if tcd_file and keyword_file and header_file:
         if os.path.exists(header_path):
             os.remove(header_path)
 else:
-    st.info("⬆️ Please upload all three required files to proceed.")
+    st.info("⬆️ Please upload all three required files and define label format components to proceed.")
