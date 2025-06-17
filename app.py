@@ -68,8 +68,8 @@ with col2:
     st.session_state.features = st.text_input("Feature (e.g., Alert, Warning, Chime,TT etc)", value=st.session_state.features)
     st.session_state.sub_features = st.text_input("Sub-Feature", value=st.session_state.sub_features)
 with col3:
-    st.session_state.functionalities = st.text_input("Functionality (e.g., precondition, logicalcombination)", value=st.session_state.functionalities)
-    st.session_state.functionality_prefixes = st.text_input("Functionality Prefixes (e.g., TC0101, TC0201)", value=st.session_state.functionality_prefixes)
+    st.session_state.functionalities = st.text_input("Functionality (e.g. LogicalCombination,PowerModes,FailureMode,Configuration,VoltageMode etc )", value=st.session_state.functionalities)
+    st.session_state.functionality_prefixes = st.text_input("Functionality Prefixes (e.g., TC0101,TC0201,TC0301,TC0401,TC0501)", value=st.session_state.functionality_prefixes)
 
 # Validate functionality and prefixes alignment
 if st.session_state.functionalities and st.session_state.functionality_prefixes:
