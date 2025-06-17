@@ -13,7 +13,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     original_df = pd.read_excel(tcd_filepath)
     
     # Validate the original DataFrame to preserve row indices
-    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test", "Planned Execution", "Summary"]
+    required_columns = ["Labels", "Action", "Expected Results", "Description", "link issue Test", "Planned Execution", "Summary", "Issue ID"]
     col_to_letter_col = list(original_df.columns)
     error_list = []
     keyword_set = set(keyword_mapping_df["TCD Keywords"].str.strip().str.lower())
@@ -32,6 +32,32 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
     sub_features = [s.strip() for s in sub_features if s.strip()]
     functionalities = st.session_state.get("functionalities", "").split(",") if st.session_state.get("functionalities", "") else []
     functionalities = [f.strip() for f in functionalities if f.strip()]
+    
+    # Validate Issue ID sequence
+    issue_ids = original_df.get("Issue ID", pd.Series()).astype(str).str.strip()
+    expected_sequence = list(range(1, len(original_df) + 1))
+    for idx, issue_id in enumerate(issue_ids):
+        excel_row = idx + 2
+        try:
+            issue_id_int = int(issue_id)
+            if issue_id_int != expected_sequence[idx]:
+                error_list.append({
+                    "Row": excel_row,
+                    "Column": "Issue ID",
+                    "Cell": f"{col_to_letter.get('Issue ID', 'Unknown')}{excel_row}",
+                    "Value": issue_id,
+                    "Error": "Non-sequential Issue ID",
+                    "Issue Details": f"Issue ID must be sequential starting from 1 (expected {expected_sequence[idx]}, found {issue_id})"
+                })
+        except (ValueError, TypeError):
+            error_list.append({
+                "Row": excel_row,
+                "Column": "Issue ID",
+                "Cell": f"{col_to_letter.get('Issue ID', 'Unknown')}{excel_row}",
+                "Value": issue_id,
+                "Error": "Invalid Issue ID",
+                "Issue Details": "Issue ID must be a numeric value"
+            })
     
     for idx, row in original_df.iterrows():
         # Excel row = DataFrame index + 2 (header row in Excel)
@@ -58,7 +84,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
         df = df.dropna(how='all')
         
         # Filter out rows where only 'Labels' has a value
-        df = df.dropna(subset=['Action', 'Expected Results', 'Description', 'Summary'], how='all')
+        df = df.dropna(subset=['Action', 'Expected Results', 'Description', 'Summary', 'Issue ID'], how='all')
         
         # Reset index after filtering
         df = df.reset_index(drop=True)
@@ -81,6 +107,7 @@ def load_and_preprocess_tcd(tcd_filepath, keyword_mapping_df):
         # Ensure Description is a non-empty string
         df["Description"] = df["Description"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
         df["Summary"] = df["Summary"].fillna("Unnamed Test Case").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+        df["Issue ID"] = df["Issue ID"].astype(str).str.strip()
     
     return df, error_df
 
