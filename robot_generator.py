@@ -575,7 +575,7 @@ def generate_separate_robot_files(df, keyword_mapping_df=None, header_file_path=
             manual_sub_feature_grouped = manual_df.groupby("Sub_Feature")
             for sub_feature, sub_feature_group in manual_sub_feature_grouped:
                 sub_feature_tag = sanitize_filename(sub_feature.strip())
-                manual_file_path = os.path.join(feature_dir, f"manual_{sub_feature_tag}.robot")
+                manual_file_path = os.path.join(feature_dir, f"MANUAL_{sub_feature_tag}.robot")
                 with open(manual_file_path, "w", encoding="utf-8") as f:
                     f.write(header_content)
                     f.write("*** Test Cases ***\n\n")
